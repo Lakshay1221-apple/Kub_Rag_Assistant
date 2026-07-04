@@ -57,4 +57,4 @@ def parse_html(file_path: str) -> str:
 	except Exception as exc:
 		logfire.error(f"HTML parse failed: {exc}")
 		logger.exception("HTML parse failed for {}", file_path)
-		raise
+		raise 
