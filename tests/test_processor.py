@@ -73,6 +73,16 @@ def test_process_file_unsupported_extension(tmp_path: Path) -> None:
         processor.process_file(str(file_path), file_path.name, "true", qdrant_client=processor.get_qdrant_client())
 
 
+def test_process_file_handles_multi_dot_filename(tmp_path: Path) -> None:
+    file_path = tmp_path / "report.v1.pdf"
+    file_path.write_text("content", encoding="utf-8")
+
+    processor.process_file(str(file_path), file_path.name, "true", qdrant_client=processor.get_qdrant_client())
+
+    client = processor.get_qdrant_client()
+    assert client.upserts
+
+
 def test_process_file_no_chunks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     file_path = tmp_path / "sample.txt"
     file_path.write_text("content", encoding="utf-8")

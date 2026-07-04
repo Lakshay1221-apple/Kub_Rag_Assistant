@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from app.services.retrieval import embeddings
@@ -39,6 +37,18 @@ class _FakeFallbackModel:
         return _EncodedRows(rows)
 
 
+class _QuotaGeminiModel:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    def embed_query(self, text: str) -> list[float]:
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+
 @pytest.fixture(autouse=True)
 def reset_embedding_state() -> None:
     embeddings._active_model = None
@@ -64,8 +74,13 @@ def test_embedding_fallback_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert embeddings._model_type == "fallback"
     assert embeddings.get_embedding_dim() == 768
-    assert embeddings.embed_texts(["beta"]) == [[4.0, 4.0]]
-    assert embeddings.embed_query("beta") == [4.0, 4.0]
+    fallback_vectors = embeddings.embed_texts(["beta"])
+    assert len(fallback_vectors) == 1
+    assert len(fallback_vectors[0]) == 768
+    assert fallback_vectors[0][:2] == [4.0, 4.0]
+    query_vector = embeddings.embed_query("beta")
+    assert len(query_vector) == 768
+    assert query_vector[:2] == [4.0, 4.0]
 
 
 def test_embed_texts_empty_input(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,3 +88,19 @@ def test_embed_texts_empty_input(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(embeddings, "_load_fallback", lambda: _FakeFallbackModel())
 
     assert embeddings.embed_texts([]) == []
+
+
+def test_embedding_falls_back_on_quota_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    quota_model = _QuotaGeminiModel()
+
+    monkeypatch.setattr(embeddings, "_probe_gemini", lambda: quota_model)
+    monkeypatch.setattr(embeddings, "_load_fallback", lambda: _FakeFallbackModel())
+
+    embeddings._init()
+
+    vectors = embeddings.embed_texts(["alpha"])
+    assert len(vectors) == 1
+    assert len(vectors[0]) == 3072
+    assert vectors[0][:2] == [5.0, 5.0]
+    assert embeddings._model_type == "fallback"
+    assert embeddings.get_embedding_dim() == 3072

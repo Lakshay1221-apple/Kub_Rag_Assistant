@@ -66,7 +66,7 @@ def process_file(
     with logfire.span("Processing File", file = filename , source  = source_type) :
 
         try:
-            ext = filename.lower().split(".", 1)[-1]
+            ext = os.path.splitext(filename.lower())[1].lstrip(".")
             if ext == "pdf":
                 text = parse_pdf(file_path)
             elif ext in ["html", "htm"]:
