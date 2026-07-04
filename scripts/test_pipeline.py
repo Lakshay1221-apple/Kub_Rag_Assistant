@@ -119,7 +119,7 @@ def main() -> int:
         fake_client = _FakeQdrantClient()
         import app.ingestion.processor as processor
 
-        processor.qdrant_client = fake_client
+        processor.get_qdrant_client = lambda: fake_client
         processor.embed_texts = lambda chunks: [[0.1, 0.2, 0.3] for _ in chunks]
         processor.chunk_text = lambda text: [text.strip()] if text.strip() else []
         processor.PROCESSED_DATA_DIR = tempfile.mkdtemp(prefix="pipeline-smoke-")

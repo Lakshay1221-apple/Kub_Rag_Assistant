@@ -3,6 +3,8 @@
 import os 
 import uuid 
 import json 
+from collections.abc import Iterator
+
 import logfire 
 
 from qdrant_client import QdrantClient
@@ -18,22 +20,27 @@ from app.ingestion.loaders.text import parse_text
 
 PROCESSED_DATA_DIR = "processed_data"
 
-qdrant_client = QdrantClient(
-    url = settings.QDRANT_URL,
-    api_key = settings.QDRANT_API_KEY,
-)
-
 if os.getenv("LOGFIRE_TOKEN"):
     logfire.configure(service_name="ingestion_processor", service_version="1.0.0")
 else:
     logfire.configure(send_to_logfire=False)
+
+
+def get_qdrant_client() -> QdrantClient:
+    """Create a Qdrant client on demand."""
+
+    return QdrantClient(
+        url=settings.QDRANT_URL,
+        api_key=settings.QDRANT_API_KEY,
+    )
 
 def save_processed_locally(data: dict, source_type : str, filename : str) -> str:
     '''Save processed data to a local JSON file.'''
 
     folder = os.path.join(PROCESSED_DATA_DIR, source_type)
     os.makedirs(folder, exist_ok = True)
-    dest = os.path.join(folder, f"{filename}.json")
+    name = os.path.splitext(filename)[0]
+    dest = os.path.join(folder, f"{name}.json")
     with open(dest, "w", encoding = 'utf-8')  as f:
         json.dump(data, f, ensure_ascii = False, indent = 4)
     logfire.info(f"Processed data saved locally at {dest}")
@@ -41,7 +48,19 @@ def save_processed_locally(data: dict, source_type : str, filename : str) -> str
     return dest
 
 
-def process_file(file_path: str, filename: str, source_type: str) -> None:
+def _iter_batches(items: list[models.PointStruct], batch_size: int) -> Iterator[list[models.PointStruct]]:
+    """Yield batches of items for Qdrant upserts."""
+
+    for start in range(0, len(items), batch_size):
+        yield items[start:start + batch_size]
+
+
+def process_file(
+    file_path: str,
+    filename: str,
+    source_type: str,
+    qdrant_client: QdrantClient | None = None,
+) -> None:
     ''' Process a file based on its type and save the processed data locally.'''
 
     with logfire.span("Processing File", file = filename , source  = source_type) :
@@ -81,6 +100,12 @@ def process_file(file_path: str, filename: str, source_type: str) -> None:
 
                 embeddings = embed_texts(chunks)
 
+                if len(embeddings) != len(chunks):
+                    raise ValueError(
+                        "Embeddings count mismatch. "
+                        f"Expected {len(chunks)} got {len(embeddings)}"
+                    )
+
                 points = [
                     models.PointStruct(
                         id = str(uuid.uuid4()),
@@ -97,12 +122,15 @@ def process_file(file_path: str, filename: str, source_type: str) -> None:
 
                 logfire.info(f"Embeddings generated for {len(embeddings)} chunks for file {filename}")
 
-                
-                qdrant_client.upsert(
-                    collection_name = settings.QDRANT_COLLECTION_NAME,
-                    points = points,
-                )
-                logfire.info(f"Upserted {len(points)} points to Qdrant for file {filename}")
+                client = qdrant_client or get_qdrant_client()
+                upserted_count = 0
+                for batch in _iter_batches(points, 100):
+                    client.upsert(
+                        collection_name = settings.QDRANT_COLLECTION_NAME,
+                        points = batch,
+                    )
+                    upserted_count += len(batch)
+                logfire.info(f"Upserted {upserted_count} points to Qdrant for file {filename}")
 
         
         except Exception as e:
@@ -110,14 +138,23 @@ def process_file(file_path: str, filename: str, source_type: str) -> None:
             raise
 
 
-def process_directory(dir_path: str, source_type: str) -> None:
+def process_directory(
+    dir_path: str,
+    source_type: str,
+    qdrant_client: QdrantClient | None = None,
+) -> None:
     """ Process all files in a directory based on their type and save the processed data locally. """
 
     with logfire.span('Scanning Directory', directory = dir_path, source = source_type):
 
         files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
         for filename in files:
-            process_file(os.path.join(dir_path, filename), filename, source_type)
+            process_file(
+                os.path.join(dir_path, filename),
+                filename,
+                source_type,
+                qdrant_client=qdrant_client,
+            )
 
 
 
@@ -126,9 +163,17 @@ def run_universal_ingestion(base_dir: str, explicit_source_type: str = None, wip
 
     with logfire.span("Universal Ingestion", base_directory = base_dir, explicit_source_type = explicit_source_type, wipe = wipe):
 
-        if not qdrant_client.collection_exists(settings.QDRANT_COLLECTION_NAME):
+        client = get_qdrant_client()
+
+        collection_exists = client.collection_exists(settings.QDRANT_COLLECTION_NAME)
+        if wipe and collection_exists:
+            client.delete_collection(settings.QDRANT_COLLECTION_NAME)
+            collection_exists = False
+            logfire.info(f"Deleted existing Qdrant collection '{settings.QDRANT_COLLECTION_NAME}'")
+
+        if not collection_exists:
             dim = get_embedding_dim()
-            qdrant_client.create_collection(
+            client.create_collection(
                 collection_name=settings.QDRANT_COLLECTION_NAME,
                 vectors_config=models.VectorParams(
                     size=dim,
@@ -156,7 +201,7 @@ def run_universal_ingestion(base_dir: str, explicit_source_type: str = None, wip
                     else "general"
                 )
             logfire.info(f"No subdirectories found. Processing base directory as source type '{source_type}'")
-            process_directory(base_dir, source_type)
+            process_directory(base_dir, source_type, qdrant_client=client)
 
         else:
             for subdir in subdirs:
@@ -165,6 +210,6 @@ def run_universal_ingestion(base_dir: str, explicit_source_type: str = None, wip
                     else "noisy" if "noisy" in subdir.lower()
                     else subdir 
                 )
-                process_directory(os.path.join(base_dir, subdir), source_type)
+                process_directory(os.path.join(base_dir, subdir), source_type, qdrant_client=client)
 
     
