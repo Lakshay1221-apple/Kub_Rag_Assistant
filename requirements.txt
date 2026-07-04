@@ -1,0 +1,30 @@
+# API
+fastapi
+uvicorn[standard]
+python-dotenv
+
+# Utilities
+requests
+numpy
+
+# LLM
+google-generativeai
+langchain-google-genai
+
+# Embeddings
+sentence-transformers
+
+# Vector Database
+qdrant-client
+
+# Document Processing
+unstructured
+python-pptx
+python-docx
+pypdf
+pdfplumber
+beautifulsoup4
+
+# Logging & Observability
+logfire[fastapi,requests]
+loguru
