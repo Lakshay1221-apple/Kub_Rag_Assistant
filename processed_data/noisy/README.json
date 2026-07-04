@@ -1,0 +1,7 @@
+{
+    "filename": "README.txt",
+    "source_type": "noisy",
+    "chunks": [
+        "Generated synthetic noise dataset files inspired by academic PDF titles.\nIncluded formats:\n- TXT\n- HTML\n- DOCX\n- PPTX\nThe content is intentionally random and suitable for:\n- testing parsers\n- indexing systems\n- search experiments\n- document ingestion pipelines\n- storage/load simulations"
+    ]
+}

@@ -125,3 +125,26 @@ def test_run_universal_ingestion_wipes_existing_collection(tmp_path: Path, monke
     processor.run_universal_ingestion(str(base_dir), explicit_source_type=None, wipe=True)
 
     assert fake_client.deleted_collections == [processor.settings.QDRANT_COLLECTION_NAME]
+
+
+def test_process_directory_continues_on_file_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dir_path = tmp_path / "data"
+    dir_path.mkdir()
+    file_bad = dir_path / "bad.txt"
+    file_bad.write_text("bad file content", encoding="utf-8")
+    file_good = dir_path / "good.txt"
+    file_good.write_text("good file content", encoding="utf-8")
+
+    processed_files = []
+
+    def mock_process_file(file_path: str, filename: str, source_type: str, qdrant_client=None) -> None:
+        processed_files.append(filename)
+        if filename == "bad.txt":
+            raise ValueError("No chunks created for file bad.txt")
+
+    monkeypatch.setattr(processor, "process_file", mock_process_file)
+
+    processor.process_directory(str(dir_path), "test_source")
+
+    assert "bad.txt" in processed_files
+    assert "good.txt" in processed_files

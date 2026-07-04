@@ -149,12 +149,15 @@ def process_directory(
 
         files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
         for filename in files:
-            process_file(
-                os.path.join(dir_path, filename),
-                filename,
-                source_type,
-                qdrant_client=qdrant_client,
-            )
+            try:
+                process_file(
+                    os.path.join(dir_path, filename),
+                    filename,
+                    source_type,
+                    qdrant_client=qdrant_client,
+                )
+            except Exception as e:
+                logfire.error(f"Failed to process file {filename}: {e}")
 
 
 
