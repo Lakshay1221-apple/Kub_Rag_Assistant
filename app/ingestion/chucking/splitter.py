@@ -1,6 +1,7 @@
-'''A module for splitting a list of items into chunks of a specified size.'''
+'''A module for splitting text into chunks of a specified size.'''
 
-from typing import List, list 
+from typing import List
+
 import logfire 
 
 def chunk_text(text: str, chunk_size: int = 1500) -> List[str]:
@@ -9,6 +10,8 @@ def chunk_text(text: str, chunk_size: int = 1500) -> List[str]:
     '''  
 
     with logfire.span("chunk_text", chunk_size=chunk_size):
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than zero")
         if not text.strip():
             return []
         
@@ -28,7 +31,7 @@ def chunk_text(text: str, chunk_size: int = 1500) -> List[str]:
             chunks.append(current_chunk.strip())
 
         valid_chunks = [chunk for chunk in chunks if chunk.strip()]
-        logfire.info("Chunking completed: {} chunks created", len(valid_chunks))
+        logfire.info(f"Chunking completed: {len(valid_chunks)} chunks created")
         return valid_chunks
 
 

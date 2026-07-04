@@ -1,7 +1,7 @@
 ''' Embedding service for text retrieval. '''
 
 import time
-from xml.parsers.expat import model 
+
 import logfire 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from sentence_transformers import SentenceTransformer
@@ -109,6 +109,8 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     ''' Embed a list of texts in batches. '''
 
     _init()
+    if not texts:
+        return []
     all_embeddings: list[list[float]] = []
 
     for i in range(0, len(texts), BATCH_SIZE):
