@@ -1,5 +1,13 @@
 """CRITICAL: logfire MUST be configured before ALL other imports
-so that spans from all modules are captured from the start."""
+so that spans from all modules are captured from the start.
+
+span  -> 1 unit of execution time 
+
+trace -> a collection of spans that share the same trace_id, representing a single request or operation
+
+waterfall -> a collection of traces that share the same waterfall_id, representing a single user session or workflow
+
+"""
 
 import logfire
 import os

@@ -14,9 +14,8 @@ def _state_summary(state: AgentState) -> dict:
         "documents_count": len(state.get("documents", [])),
         "plan": state.get("plan", []),
         "status": state.get("status"),
-        "has_final_answer": bool(state.get("final_answer")),
+        "has_final_answer": bool(state.get("final_answer")), 
     }
-
 
 def generate_node(state : AgentState):
 

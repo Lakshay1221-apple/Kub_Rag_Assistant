@@ -1,4 +1,5 @@
-"""Application observability helpers."""
+"""Application observability helpers.
+"""
 
 from __future__ import annotations
 
