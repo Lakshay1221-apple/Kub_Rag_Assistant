@@ -41,3 +41,5 @@ def configure_logfire(service_name: str, service_version: str | None = None) -> 
         logfire.configure(send_to_logfire=False)
 
     _CONFIGURED = True
+
+
