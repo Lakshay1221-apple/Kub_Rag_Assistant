@@ -20,10 +20,7 @@ from app.ingestion.loaders.text import parse_text
 
 PROCESSED_DATA_DIR = "processed_data"
 
-if os.getenv("LOGFIRE_TOKEN"):
-    logfire.configure(service_name="ingestion_processor", service_version="1.0.0")
-else:
-    logfire.configure(send_to_logfire=False)
+logfire.configure(send_to_logfire=False)
 
 
 def get_qdrant_client() -> QdrantClient:

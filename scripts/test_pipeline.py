@@ -79,9 +79,12 @@ def main() -> int:
         from app.ingestion.loaders.pdf import parse_pdf
         from app.ingestion.loaders.text import parse_text
         from app.services.retrieval import embeddings
+        from app.observability import configure_logfire
     except Exception as exc:
         _print_failure(f"Import validation failed: {exc}")
         return 1
+
+    configure_logfire(service_name="ingestion_processor", service_version="1.0.0")
 
     _print_success("Loaders imported")
     _print_success("Processor imported")
