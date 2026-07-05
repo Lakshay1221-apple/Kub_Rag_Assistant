@@ -1,9 +1,23 @@
+import logfire
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from app.agents.state import AgentState
 from app.agents.nodes.planner import planner_node
 from app.agents.nodes.retriever import retrieve_node
 from app.agents.nodes.responder import generate_node
+
+
+def _state_summary(state: AgentState) -> dict:
+    """Return compact state details for graph routing logs."""
+
+    return {
+        "current_query": state.get("current_query"),
+        "messages_count": len(state.get("messages", [])),
+        "documents_count": len(state.get("documents", [])),
+        "plan": state.get("plan", []),
+        "status": state.get("status"),
+        "has_final_answer": bool(state.get("final_answer")),
+    }
 
 
 # 1. Initialize the State Graph
@@ -20,8 +34,11 @@ def route_planner(state: AgentState):
     """
     Routes the workflow based on the planner's decision.
     """
+    logfire.info(f"LangGraph Routing State: {_state_summary(state)}")
     if state["current_query"] == "CONVERSATIONAL":
+        logfire.info("LangGraph Routing Decision: responder")
         return "responder"
+    logfire.info("LangGraph Routing Decision: retriever")
     return "retriever"
 
 workflow.set_entry_point("planner")
@@ -49,4 +66,3 @@ checkpointer = MemorySaver()
 
 # 4. Compile the Graph with Memory
 rag_agent = workflow.compile(checkpointer=checkpointer)
-

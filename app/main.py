@@ -23,6 +23,19 @@ app = FastAPI(title="Enterprise Agentic RAG API")
 class QueryRequest(BaseModel):
     q: str
     thread_id: Optional[str] = "default_user"
+
+
+def _state_summary(state: dict) -> dict:
+    """Return compact state details for debug logs without dumping full documents."""
+
+    return {
+        "current_query": state.get("current_query"),
+        "messages_count": len(state.get("messages", [])),
+        "documents_count": len(state.get("documents", [])),
+        "plan": state.get("plan", []),
+        "status": state.get("status"),
+        "final_answer": state.get("final_answer"),
+    }
     
     
 @app.get("/")
@@ -55,14 +68,17 @@ def query(request: QueryRequest):
         "current_query": q,
         "documents": [],
         "plan": ["Start"],
-        "status": "Initializing Graph..."
+        "status": "Initializing Graph...",
+        "final_answer": "",
     }
     
     # Configuration for Memory (Thread ID)
     config = {"configurable": {"thread_id": thread_id}}
     
     try:
+            logfire.info(f"FastAPI Initial State: {_state_summary(initial_state)}")
             final_output = rag_agent.invoke(initial_state, config=config)
+            logfire.info(f"FastAPI Final Graph Output: {_state_summary(final_output)}")
 
             return {
                 "question": q,

@@ -3,11 +3,25 @@ from app.agents.state import AgentState
 from app.services.retrieval.qdrant_service import search_enterprise_knowledge
 from app.services.retrieval.ranking_service import rerank_documents
 
+def _state_summary(state: AgentState) -> dict:
+    """Return compact state details for debug logs without dumping full documents."""
+
+    return {
+        "current_query": state.get("current_query"),
+        "messages_count": len(state.get("messages", [])),
+        "documents_count": len(state.get("documents", [])),
+        "plan": state.get("plan", []),
+        "status": state.get("status"),
+        "has_final_answer": bool(state.get("final_answer")),
+    }
+
+
 def retrieve_node(state: AgentState):
     """
     Performs vector search and semantic reranking for technical queries.
     """
     query = state["current_query"]
+    logfire.info(f"Retriever Node Input State: {_state_summary(state)}")
     
     
     # Standard Retrieval Logic
@@ -24,8 +38,10 @@ def retrieve_node(state: AgentState):
             
         formatted_docs = [f"CONTENT: {doc}" for doc in reranked_contents]
     
-    return {
+    output = {
         "documents": formatted_docs,
         "status": f"Found technical context.",
         "plan": state["plan"] + ["Context Retrieved"]
     }
+    logfire.info(f"Retriever Node Output State: {_state_summary({**state, **output})}")
+    return output

@@ -5,12 +5,27 @@ import logfire
 
 llm = ChatGroq(api_key = settings.GROQ_API_KEY, model = settings.GROQ_MODEL)
 
+def _state_summary(state: AgentState) -> dict:
+    """Return compact state details for debug logs."""
+
+    return {
+        "current_query": state.get("current_query"),
+        "messages_count": len(state.get("messages", [])),
+        "documents_count": len(state.get("documents", [])),
+        "plan": state.get("plan", []),
+        "status": state.get("status"),
+        "has_final_answer": bool(state.get("final_answer")),
+    }
+
+
 def planner_node(state: AgentState):
 
     '''
     The planner node determines if a 
     search is needed based on the Entire conversation.
     '''
+
+    logfire.info(f"Planner Node Input State: {_state_summary(state)}")
 
     history = ""
 
@@ -78,19 +93,22 @@ def planner_node(state: AgentState):
         logfire.info(f"Planner Node Decision: {decision}")
 
     if decision == "CONVERSATIONAL":
-        return {
+        output = {
             "current_query": "CONVERSATIONAL",
             "status": "Handling conversational response without external search.",
             "plan" : ['Intent: Conversational Response', 'Action: Generate response based on conversation history'],
         }
+        logfire.info(f"Planner Node Output State: {_state_summary({**state, **output})}")
+        return output
     
-    return {
+    output = {
         "current_query": decision,
         "status": "Search query generated for external retrieval.",
         "plan" : ['Intent: External Search Required', f'Action: Execute search with query "{decision}"'],
     }
+    logfire.info(f"Planner Node Output State: {_state_summary({**state, **output})}")
+    return output
     
-
 
 
 

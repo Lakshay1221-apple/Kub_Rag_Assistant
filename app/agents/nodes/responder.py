@@ -5,11 +5,26 @@ from langchain_groq import ChatGroq
 
 llm = ChatGroq(api_key = settings.GROQ_API_KEY, model = settings.GROQ_MODEL, temperature = 0.0, max_tokens = 100)
 
+def _state_summary(state: AgentState) -> dict:
+    """Return compact state details for debug logs without dumping full documents."""
+
+    return {
+        "current_query": state.get("current_query"),
+        "messages_count": len(state.get("messages", [])),
+        "documents_count": len(state.get("documents", [])),
+        "plan": state.get("plan", []),
+        "status": state.get("status"),
+        "has_final_answer": bool(state.get("final_answer")),
+    }
+
+
 def generate_node(state : AgentState):
 
     '''
     Synthesizes a response based on the conversation history and the latest user message.
     '''
+
+    logfire.info(f"Responder Node Input State: {_state_summary(state)}")
 
     query = state['current_query']
 
@@ -61,35 +76,30 @@ def generate_node(state : AgentState):
         "{user_msg}"  
         """  
 
-        with logfire.span("Generating Response", query = query, user_message = user_msg):
-            try:
-                content  = llm.invoke(prompt).content
-                logfire.info("Response generated successfully.")
+    with logfire.span("Generating Response", query = query, user_message = user_msg):
+        try:
+            logfire.info("Responder invoking LLM.")
+            content  = llm.invoke(prompt).content
+            logfire.info("Response generated successfully.")
 
-                return {
-                    "final_answer": content,
-                    "status" : "Response Generated",
-                    "plan" : state["plan"],
-                    "message" : [{"role" : "assistant", "content" : content}]
-                }
-            except Exception as e:
-                logfire.error(f"Error generating response: {e}")
-                return {
-                    "final_answer": "",
-                    "status" : "Error Generating Response",
-                    "plan" : state["plan"],
-                    "message" : [{"role" : "assistant", "content" : ""}]
-                }
+            output = {
+                "final_answer": content,
+                "status" : "Response Generated",
+                "plan" : state["plan"],
+                "messages" : [{"role" : "assistant", "content" : content}]
+            }
+            logfire.info(f"Responder Node Output State: {_state_summary({**state, **output})}")
+            return output
+        except Exception as e:
+            logfire.error(f"Error generating response: {e}")
+            output = {
+                "final_answer": "",
+                "status" : "Error Generating Response",
+                "plan" : state["plan"],
+                "messages" : [{"role" : "assistant", "content" : ""}]
+            }
+            logfire.info(f"Responder Node Output State: {_state_summary({**state, **output})}")
+            return output
                 
-
-
-
-
-
-
-
-    
-
-
 
 
