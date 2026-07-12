@@ -41,6 +41,7 @@ def guard(message: str) -> tuple[bool, str | None]:
                                 skip the RAG pipeline entirely.
         (False, None)          — message is clean; proceed to LangGraph.
     """
+    
     if _rails is None:
         logfire.warning("Guardrails not initialised — skipping gate.")
         return False, None

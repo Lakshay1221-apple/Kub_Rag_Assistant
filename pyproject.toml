@@ -20,6 +20,7 @@ dependencies = [
     "nemoguardrails>=0.23.0",
     "numpy>=2.5.0",
     "pdfplumber>=0.11.10",
+    "portkey-ai>=2.3.2",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "pypdf>=6.14.2",
