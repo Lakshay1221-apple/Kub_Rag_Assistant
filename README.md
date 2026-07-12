@@ -1,45 +1,50 @@
 # KUB RAG Assistant Model
 
-An agentic Retrieval-Augmented Generation (RAG) assistant for answering technical documentation questions using FastAPI, LangGraph, Qdrant, Groq, Gemini embeddings, FlashRank, and Streamlit.
+An agentic Retrieval-Augmented Generation (RAG) assistant for answering technical documentation questions using FastAPI, LangGraph, Qdrant, Portkey LLM Gateway (Groq), Gemini embeddings, FlashRank, NeMo Guardrails, and Streamlit.
 
 ---
 
 ## Overview
 
-KUB RAG Assistant Model is a documentation question-answering system. It ingests a mixed corpus of Kubernetes and technical reference files, converts them into searchable chunks, stores embeddings in Qdrant, and uses a LangGraph agent workflow to decide whether a user message needs retrieval before generating an answer.
+KUB RAG Assistant Model is an enterprise-grade documentation question-answering system. It ingests a mixed corpus of Kubernetes and technical reference files, converts them into searchable chunks, stores embeddings in Qdrant, and uses a LangGraph agent workflow to decide whether a user message needs retrieval before generating an answer. 
+
+To ensure safety and reliability in production, the assistant implements two enterprise gates:
+1. **Input Guardrails (NeMo Guardrails)**: Intercepts jailbreak attempts, filters off-topic queries, and handles non-technical dialog flow (greetings, farewelling, capabilities) before hitting the core pipeline.
+2. **LLM Gateway (Portkey)**: Intermediates LLM requests to optimize cost, reliability, and latency via fallback targets, automated retries, and simple response caching.
 
 The project is built for developers, DevOps engineers, students, and technical teams who want a conversational assistant over local or enterprise documentation.
 
 Core capabilities include:
 
-- Chat-based question answering through a FastAPI backend.
-- A Streamlit frontend with session-scoped conversation memory.
-- Document ingestion for PDF, HTML, TXT, Markdown, CSV, JSON, DOCX, and PPTX files.
-- Semantic search over Qdrant vector collections.
-- Cross-encoder reranking with FlashRank.
-- LLM-based planning and response generation through Groq.
-- Embedding generation with Gemini embeddings and a local Sentence Transformers fallback.
-- Logfire instrumentation for tracing backend, ingestion, graph, and UI activity.
+- **Input Guardrails**: NeMo Guardrails gate using `llama-3.1-8b-instant` to check inputs for jailbreaks, off-topic prompts, and handle greetings.
+- **LLM Gateway Integration**: Portkey gateway for all LLM node requests with cache-matching, retry rules, and transparent model fallbacks.
+- **Chat-based Q&A**: Question answering through a FastAPI backend.
+- **Interactive UI**: A Streamlit frontend with session-scoped conversation memory.
+- **Universal Ingestion**: Support for PDF, HTML, TXT, Markdown, CSV, JSON, DOCX, and PPTX files.
+- **Semantic Search**: Vector similarity over Qdrant collections.
+- **Cross-Encoder Reranking**: Re-scoring and ranking retrieved chunks with FlashRank.
+- **Observability**: Rich Logfire instrumentation for tracing backend, ingestion, graph, and UI activity.
 
 ---
 
 ## Key Features
 
-- Conversational AI assistant for technical documentation.
-- Retrieval-Augmented Generation over local document collections.
-- LangGraph workflow with planner, retriever, and responder nodes.
-- Query planning that routes conversational messages away from retrieval.
-- Qdrant vector database integration.
-- Gemini embedding model support.
-- Local `sentence-transformers` embedding fallback.
-- FlashRank semantic reranking.
-- Conversation memory using LangGraph `MemorySaver` and `thread_id`.
-- FastAPI API with query and graph visualization endpoints.
-- Streamlit chat UI with source-context display.
-- Universal ingestion pipeline for multiple document formats.
-- Local processed JSON output under `processed_data/`.
-- Logfire tracing and logging.
-- Unit tests for loaders, chunking, embeddings, and ingestion behavior.
+- **Enterprise Guardrails**: Pre-RAG check via NeMo Guardrails protecting against jailbreaks, off-topic requests, and standardizing conversational flows.
+- **Portkey LLM Gateway**: Centralized API gateway with automatic fallback (primary `llama-3.3-70b-versatile`, fallback `llama-3.1-8b-instant`), request caching, and retries.
+- **Conversational AI assistant** for technical documentation.
+- **Retrieval-Augmented Generation** over local document collections.
+- **LangGraph workflow** with planner, retriever, and responder nodes.
+- **Query planning** that routes conversational messages away from retrieval.
+- **Qdrant vector database** integration.
+- **Gemini embedding model** support with local `sentence-transformers` fallback.
+- **FlashRank semantic reranking** for precise context compilation.
+- **Conversation memory** using LangGraph `MemorySaver` and `thread_id`.
+- **FastAPI API** with query and graph visualization endpoints.
+- **Streamlit chat UI** with source-context display.
+- **Universal ingestion pipeline** for multiple document formats.
+- **Local processed JSON** output under `processed_data/`.
+- **Logfire tracing and logging**.
+- **Unit tests** for loaders, chunking, embeddings, and ingestion behavior.
 
 ---
 
@@ -48,11 +53,13 @@ Core capabilities include:
 At runtime, the application follows this flow:
 
 ```text
-User -> Streamlit or API -> FastAPI -> LangGraph Planner
-     -> Retriever -> Qdrant -> FlashRank Reranker -> Responder LLM -> Response
+User -> Streamlit/API -> FastAPI -> NeMo Guardrails Gate
+                              -> (Rail Fired) -> Blocked Response
+                              -> (Passed) -> LangGraph Planner (via Portkey Gateway)
+                              -> Retriever -> Qdrant -> FlashRank Reranker -> Responder LLM (via Portkey Gateway) -> Response
 ```
 
-The planner decides whether a user message is conversational or needs external technical context. If the message can be answered from conversation history, the graph routes directly to the responder. If retrieval is needed, the graph searches Qdrant, reranks retrieved chunks with FlashRank, and passes the best context to the responder.
+The Guardrails gate intercepts jailbreaks, greetings, or off-topic prompts. Clean queries proceed to the planner node (powered by the Portkey gateway), which decides if retrieval is necessary. If needed, the system searches Qdrant, reranks candidates using FlashRank, and passes the best context chunks to the responder node (also powered by the Portkey gateway) to generate a final answer.
 
 ```mermaid
 flowchart TD
@@ -60,18 +67,36 @@ flowchart TD
     User --> APIClient[Direct API Client]
     UI --> FastAPI[FastAPI Backend]
     APIClient --> FastAPI
-    FastAPI --> Graph[LangGraph RAG Agent]
-    Graph --> Planner[Planner Node]
-    Planner -->|CONVERSATIONAL| Responder[Responder Node]
-    Planner -->|Search query| Retriever[Retriever Node]
-    Retriever --> EmbedQuery[Embed Query]
-    EmbedQuery --> Qdrant[Qdrant Vector DB]
-    Qdrant --> Candidates[Top 15 Candidates]
-    Candidates --> Reranker[FlashRank Reranker]
-    Reranker --> TopDocs[Top 5 Context Chunks]
-    TopDocs --> Responder
-    Responder --> Groq[Groq Chat LLM]
-    Groq --> FastAPI
+    
+    subgraph Gate 1: Guardrails
+        FastAPI --> Guard[NeMo Guardrails Gate]
+        Guard -->|Rail Fired| ReturnRail[Direct Guardrail Response]
+    end
+    
+    subgraph Gate 2: RAG Pipeline (LangGraph)
+        Guard -->|Passed| Graph[LangGraph RAG Agent]
+        Graph --> Planner[Planner Node]
+        
+        Planner -->|CONVERSATIONAL| Responder[Responder Node]
+        Planner -->|Search query| Retriever[Retriever Node]
+        
+        Retriever --> EmbedQuery[Embed Query]
+        EmbedQuery --> Qdrant[Qdrant Vector DB]
+        Qdrant --> Candidates[Top 15 Candidates]
+        Candidates --> Reranker[FlashRank Reranker]
+        Reranker --> TopDocs[Top 5 Context Chunks]
+        TopDocs --> Responder
+    end
+
+    subgraph LLM Gateway (Portkey)
+        Planner -.-> PortkeyLLM[Portkey LLM Gateway]
+        Responder -.-> PortkeyLLM
+        PortkeyLLM --> GroqPrimary[Groq Primary: Llama 3.3 70B]
+        PortkeyLLM -.->|Fallback| GroqFallback[Groq Fallback: Llama 3.1 8B]
+    end
+
+    ReturnRail --> FastAPI
+    Responder --> FastAPI
     FastAPI --> UI
 ```
 
@@ -80,16 +105,17 @@ flowchart TD
 ## Request Lifecycle
 
 1. A user sends a query through `POST /query` or through the Streamlit chat UI.
-2. FastAPI builds an initial `AgentState` containing the user message, query, empty document list, plan, status, and final answer.
-3. FastAPI invokes the compiled LangGraph workflow with `thread_id` in the graph config.
-4. The planner node reads the conversation history and latest user message.
-5. The planner returns either `CONVERSATIONAL` or a refined search query.
-6. If the query is conversational, LangGraph routes directly to the responder.
-7. If retrieval is required, the retriever embeds the search query and searches Qdrant for 15 candidates.
-8. FlashRank reranks candidate chunks and keeps the top 5.
-9. The responder builds a prompt from conversation history and, when available, retrieved technical context.
-10. Groq generates the final answer.
-11. FastAPI returns the answer, thought process, status, and retrieved source context.
+2. **Guardrail Screening**: FastAPI intercepts the request and evaluates the input query using NeMo Guardrails.
+   - If a guardrail fires (e.g. prompt injection/jailbreak, off-topic requests, greetings, capabilities inquiries), the pipeline is bypassed, and the predetermined assistant response is returned immediately.
+3. **Graph Initialization**: If guardrails pass, FastAPI builds an initial `AgentState` containing the query, message history, plan list, and status.
+4. **LangGraph Execution**: FastAPI invokes the compiled LangGraph workflow with `thread_id` in the graph config.
+5. **Query Planning**: The planner node (instantiated through the Portkey gateway client) reads the conversation history and latest user message to output either `CONVERSATIONAL` or an optimized search query.
+6. **Routing**:
+   - If conversational, LangGraph routes directly to the responder.
+   - If retrieval is required, the retriever embeds the search query and searches Qdrant for 15 candidates.
+7. **Semantic Reranking**: FlashRank reranks candidate chunks and keeps the top 5.
+8. **Response Generation**: The responder (instantiated through the Portkey gateway client) builds a prompt from conversation history and, when available, retrieved technical context, and generates the final answer.
+9. **Delivery**: FastAPI returns the answer, thought process, status, and retrieved source context to the client.
 
 ---
 
@@ -109,6 +135,13 @@ KUB_Rag_Assitant_Model/
 │   │       ├── planner.py
 │   │       ├── retriever.py
 │   │       └── responder.py
+│   ├── gateways/
+│   │   ├── __init__.py
+│   │   └── client.py
+│   ├── guardrails/
+│   │   ├── __init__.py
+│   │   ├── colang_rules.py
+│   │   └── rails.py
 │   ├── ingestion/
 │   │   ├── __init__.py
 │   │   ├── processor.py
@@ -154,9 +187,11 @@ KUB_Rag_Assitant_Model/
 
 | Path | Purpose |
 | --- | --- |
-| `app/` | Main backend package containing API, configuration, observability, agents, ingestion, and retrieval services. |
+| `app/` | Main backend package containing API, configuration, observability, agents, gateways, guardrails, ingestion, and retrieval services. |
 | `app/agents/` | LangGraph state, graph definition, and agent nodes. |
 | `app/agents/nodes/` | Planner, retriever, and responder node implementations. |
+| `app/gateways/` | LLM API Gateways. Implements Portkey client configuration, fallback paths, retries, and caching wrappers. |
+| `app/guardrails/` | Input guardrails. Implements NeMo Guardrails configuration, Colang scripts, rulesets, and checking gates. |
 | `app/ingestion/` | Document parsing, chunking, embedding, processed JSON writing, and Qdrant upsert pipeline. |
 | `app/ingestion/loaders/` | Format-specific text extractors for PDF, HTML, text-like files, DOCX, and PPTX. |
 | `app/services/retrieval/` | Embedding, Qdrant search, and reranking services. |
@@ -179,9 +214,10 @@ Responsibilities:
 - Loads `.env`.
 - Configures Logfire before importing application modules.
 - Creates `FastAPI(title="Enterprise Agentic RAG API")`.
-- Defines the query request schema.
+- Initializes NeMo Guardrails at startup via `@app.on_event("startup")`.
+- Intercepts user queries using the `guard()` logic to block off-topic or jailbreak attempts.
+- Invokes the compiled LangGraph `rag_agent` for safe/clean queries.
 - Exposes API endpoints.
-- Invokes the compiled LangGraph `rag_agent`.
 
 Key objects and functions:
 
@@ -205,6 +241,32 @@ Key settings:
 - `QDRANT_URL`
 - `QDRANT_COLLECTION_NAME`
 - `GEMINI_API_KEY`
+
+### `app/gateways/client.py`
+
+Client for the Portkey LLM Gateway proxy.
+
+Key concepts & configurations:
+- `GATEWAY_CONFIG`: Defines a fallback targets list, simple caching mode, and retry options (2 attempts on HTTP 429/503).
+- `get_langchain_llm(feature)`: Returns a `ChatOpenAI` instance pointing to `PORTKEY_GATEWAY_URL` with headers containing Portkey config mapping to Groq models (primary: `llama-3.3-70b-versatile`, fallback: `llama-3.1-8b-instant`).
+- `extract_cache_status(response)`: Extracts the `x-portkey-cache-status` header from the response.
+
+### `app/guardrails/rails.py`
+
+Initializes and runs the input/output guardrails using NVIDIA NeMo Guardrails.
+
+Key functions:
+- `initialize_rails()`: Loads the Colang and YAML guidelines to compile the `LLMRails` singleton, using the faster `llama-3.1-8b-instant` model to check user input with low latency.
+- `guard(message)`: Runs a query through the guardrails gate. If a rail fires, returns `(True, rail_response)` to indicate the query should be blocked and RAG bypassed. Otherwise returns `(False, None)`.
+
+### `app/guardrails/colang_rules.py`
+
+Defines the Colang scripts and system configuration for the guardrail system.
+
+Contents:
+- `COLANG_CONTENT`: Dialog paths and user intents for off-topic query blocking, greeting handling, capabilities check, and jailbreak prevention.
+- `YAML_CONTENT`: System prompt configuration specifying the assistant's persona as an Enterprise IT Assistant specializing in Kubernetes, Intel hardware, and enterprise networking.
+- `RAIL_INDICATORS`: Substrings used to identify if a rail response was generated.
 
 ### `app/observability.py`
 
@@ -418,22 +480,29 @@ Vector search is fast, but it can return chunks that are semantically close with
 
 If FlashRank fails, the system falls back to the original Qdrant order so the request can still continue.
 
-### LLM Layer
+### LLM Gateway Layer (Portkey Integration)
 
-The project uses `langchain-groq` and `ChatGroq`.
+All LLM requests in the RAG pipeline nodes (Planner, Responder) are routed through the **Portkey AI LLM Gateway** instead of calling LLM providers directly.
 
-Configured model:
+- **Proxy Client**: Built using `ChatOpenAI` pointing to the Portkey proxy endpoint (`PORTKEY_GATEWAY_URL`).
+- **Resilience Strategies**:
+  - **Fallback Routing**: Uses a fallback chain. If the primary model fails or gets rate-limited, it automatically fails over to a secondary target.
+    - *Primary Model*: `llama-3.3-70b-versatile` (via `GROQ_SLUG`)
+    - *Fallback Model*: `llama-3.1-8b-instant` (via `GROQ_SLUG_2`)
+  - **Caching**: Configured with a simple request-response cache (`"cache": {"mode": "simple"}`) to speed up repeat requests and save tokens.
+  - **Retries**: Configured to auto-retry 2 times on transient failures (`429` and `503` status codes).
+- **Execution**: The Planner uses the LLM to classify user messages, while the Responder uses it to produce conversational or retrieval-grounded responses.
 
-```text
-llama-3.3-70b-versatile
-```
+### Guardrails System (NeMo Guardrails)
 
-The planner uses the LLM to classify the latest message as conversational or retrieval-needed. The responder uses the LLM to generate either:
+The application features an input guardrail check stacked as "Gate 1" before entering the RAG LangGraph workflow.
 
-- a conversation-only answer from chat history, or
-- a technical answer from retrieved context plus conversation history.
-
-The responder is configured with `temperature=0.0` and `max_tokens=100`.
+- **Initialization**: A `LLMRails` instance is initialized during FastAPI startup using the lightweight `llama-3.1-8b-instant` model for fast evaluation.
+- **Rulesets**: Configured via custom Colang rules defining:
+  - *Off-Topic Block*: Blocks queries unrelated to the enterprise focus areas: Kubernetes, Intel hardware, and enterprise networking.
+  - *Jailbreak Detection*: Mitigates prompt injection and override attempts.
+  - *Standard Dialog Flows*: Seamlessly answers common conversational cues (greetings, farewelling, capabilities inquiries) without using retrieval tokens or vector queries.
+- **Bypassing**: If a rail fires, the RAG graph is skipped entirely, and the guardrail's pre-configured message is returned immediately.
 
 ### Memory System
 
@@ -507,7 +576,9 @@ Source type assignment:
 | Frontend | Streamlit | Chat UI. |
 | Agent Workflow | LangGraph | Planner/retriever/responder graph orchestration. |
 | Agent Memory | LangGraph `MemorySaver` | Thread-scoped in-memory conversation state. |
-| LLM | Groq via `langchain-groq` | Planning and final answer generation. |
+| LLM | Groq via Portkey / `ChatOpenAI` | Planning and final answer generation. |
+| Input Guardrails | NeMo Guardrails | Jailbreak protection, off-topic routing, and conversation flow control. |
+| LLM Gateway | Portkey AI | Centralized gateway proxying LLM requests with fallback, retry, and cache strategies. |
 | Embeddings | Google Gemini embeddings | Primary embedding model. |
 | Embedding Fallback | Sentence Transformers `all-mpnet-base-v2` | Local fallback embeddings. |
 | Vector Database | Qdrant | Stores and searches document chunk vectors. |
@@ -520,7 +591,7 @@ Source type assignment:
 | Testing | Pytest | Unit tests. |
 | Tooling | Ruff, Black, MyPy | Development linting, formatting, and typing tools. |
 
-Note: `pyproject.toml` also lists packages such as `chromadb`, `langchain-openai`, and `pdfplumber`, but the inspected application code currently uses Qdrant, Groq, Gemini, Sentence Transformers, pypdf, BeautifulSoup, python-docx, and python-pptx for the main runtime paths.
+Note: `pyproject.toml` also lists packages such as `chromadb`, `langchain-openai`, and `pdfplumber`, but the inspected application code currently uses Qdrant, Portkey, NeMo Guardrails, Gemini, Sentence Transformers, pypdf, BeautifulSoup, python-docx, and python-pptx for the main runtime paths.
 
 ---
 
@@ -574,6 +645,9 @@ QDRANT_URL=https://your-qdrant-endpoint
 QDRANT_CLUSTER_ENDPOINT=https://your-qdrant-endpoint
 QDRANT_API_KEY=your_qdrant_api_key
 QDRANT_COLLECTION_NAME=KUB_RAG_Assistant
+PORTKEY_API_KEY=your_portkey_api_key
+GROQ_SLUG=your_groq_slug_portkey_target
+GROQ_SLUG_2=your_fallback_groq_slug_portkey_target
 LOGFIRE_TOKEN=optional_logfire_token
 BACKEND_URL=http://localhost:8000
 ```
@@ -596,13 +670,16 @@ This reads `DATA/`, recreates the configured Qdrant collection because `wipe=Tru
 
 | Variable | Required For | Default | Description |
 | --- | --- | --- | --- |
-| `GROQ_API_KEY` | Planner and responder | None | API key used by `ChatGroq`. |
+| `GROQ_API_KEY` | Planner and responder | None | API key used by `ChatGroq` / Portkey headers. |
 | `GROQ_FALLBACK_API_KEY` | Currently not used by code paths | None | Loaded into settings but not referenced elsewhere. |
 | `GEMINI_API_KEY` | Primary embedding model | None | Used by `GoogleGenerativeAIEmbeddings`. |
 | `QDRANT_API_KEY` | Qdrant Cloud/private Qdrant | None | API key passed to `QdrantClient`. |
 | `QDRANT_CLUSTER_ENDPOINT` | Qdrant connection | None | Fallback endpoint used when `QDRANT_URL` is not set. |
 | `QDRANT_URL` | Qdrant connection | `QDRANT_CLUSTER_ENDPOINT` | Main Qdrant URL. |
 | `QDRANT_COLLECTION_NAME` | Ingestion and retrieval | `KUB_RAG_Assistant` | Collection used for document chunks. |
+| `PORTKEY_API_KEY` | LLM Gateway | None | API key used by `Portkey` client and headers. |
+| `GROQ_SLUG` | LLM Gateway target | None | Target virtual identifier/slug for primary Groq model. |
+| `GROQ_SLUG_2` | LLM Gateway fallback target | None | Target virtual identifier/slug for fallback Groq model. |
 | `LOGFIRE_TOKEN` | Observability | None | Enables remote Logfire tracing. |
 | `BACKEND_URL` | Streamlit UI | `http://localhost:8000` | Backend base URL used by `ui/app.py`. |
 
@@ -799,13 +876,13 @@ How do Kubernetes CronJobs work?
 ```
 
 Expected lifecycle:
-
-- Planner converts the message into a retrieval query.
+- NeMo Guardrails checks the input and identifies it as a valid technical query (passes).
+- LangGraph Planner (via Portkey LLM Gateway) converts the message into a retrieval query.
 - Retriever searches Qdrant.
 - FlashRank keeps the most relevant chunks.
-- Responder answers from retrieved technical context.
+- Responder (via Portkey LLM Gateway) answers using the retrieved technical context.
 
-### Conversational Query
+### Conversational Greeting (Guardrail Managed)
 
 User:
 
@@ -814,10 +891,22 @@ Hi
 ```
 
 Expected lifecycle:
+- NeMo Guardrails intercept checks the input and classifies it under the `user express greeting` intent.
+- A rail fires, returning the pre-configured bot response (`Hello! I'm your Enterprise IT Assistant...`) directly.
+- The RAG LangGraph workflow is skipped entirely.
 
-- Planner returns `CONVERSATIONAL`.
-- Graph skips retrieval.
-- Responder answers using conversation history only.
+### Off-Topic Query (Blocked by Guardrail)
+
+User:
+
+```text
+What is the capital of France?
+```
+
+Expected lifecycle:
+- NeMo Guardrails checks the input and classifies it under the `user ask off topic`.
+- A rail fires, returning the refusal response (`I'm an Enterprise IT Assistant focused on Kubernetes...`) directly.
+- The RAG LangGraph workflow is bypassed to conserve resources and avoid off-topic generation.
 
 ### Follow-up Query With Memory
 
@@ -827,7 +916,10 @@ User:
 Can you summarize that again?
 ```
 
-If the same `thread_id` is used, the planner can classify the message as conversational because prior messages are available through LangGraph memory.
+Expected lifecycle:
+- NeMo Guardrails evaluates the input and passes it.
+- If the same `thread_id` is used, the planner (via Portkey LLM Gateway) classifies the message as conversational because prior messages are available in LangGraph memory.
+- Responder answers using the conversation history.
 
 ---
 
