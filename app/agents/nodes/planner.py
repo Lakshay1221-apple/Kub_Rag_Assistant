@@ -1,5 +1,5 @@
 from app.agents.state import AgentState
-from app.gateway import get_langchain_llm
+from app.gateway.client import get_langchain_llm
 import logfire
 
 # Portkey-backed LLM: fallback + cache + retry — same .invoke() interface as ChatGroq

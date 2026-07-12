@@ -9,6 +9,7 @@ logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
 from fastapi import FastAPI, Response
 from app.agents.graph import rag_agent
 from app.guardrails import initialize_rails, guard
+from app.gateways.client import portkey_client, extract_cache_status
 
 from pydantic import BaseModel
 from typing import Optional
