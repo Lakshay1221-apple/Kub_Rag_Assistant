@@ -5,10 +5,6 @@ from langchain_openai import ChatOpenAI
 from app.config import settings
 
 
-# Production gateway config:
-#   - Fallback: primary @rag/llama-3.3-70b-versatile → @brag/llama-3.1-8b-instant on failure
-#   - Cache: semantic mode (requires Portkey Enterprise — silently falls back to simple on free/starter)
-#   - Retry: 2 attempts on rate limit / server error before triggering the fallback target
 GATEWAY_CONFIG = {
     "strategy": {"mode": "fallback"},
     "cache": {"mode": "simple"},
@@ -39,6 +35,7 @@ def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
       auth + config). The @rag/model-name format is Portkey-specific — Groq's own client
       does not understand it. You are still using Groq models; Portkey is just in the middle.
     """
+
     return ChatOpenAI(
         api_key=settings.PORTKEY_API_KEY,
         base_url=PORTKEY_GATEWAY_URL,
@@ -50,7 +47,7 @@ def get_langchain_llm(feature: str = "rag") -> ChatOpenAI:
             metadata={
                 "feature": feature,
                 "_user": "rag-system",
-                "environment": "production"
+                "environment": "dev"
             }
         )
     )
@@ -60,6 +57,7 @@ def extract_cache_status(response) -> str:
     Pull x-portkey-cache-status from the Portkey native client response headers.
     Tries multiple attribute paths defensively — returns 'MISS' if not found.
     """
+
     for attr in ("_raw_response", "_response", "_http_response"):
         raw = getattr(response, attr, None)
         if raw is not None:
