@@ -5,7 +5,6 @@ Captures: actual_response (truncated to 300 chars), actual_contexts (from source
 and actual_tools_called (detected from thought_process).
 """
 
-
 import time
 import copy
 import json
