@@ -1,117 +1,52 @@
-from app.agents.state import AgentState 
-from app.config import settings 
-from langchain_groq import ChatGroq 
-import logfire 
+from app.agents.state import AgentState
+from app.gateway import get_langchain_llm
+import logfire
 
-llm = ChatGroq(api_key = settings.GROQ_API_KEY, model = settings.GROQ_MODEL)
-
-def _state_summary(state: AgentState) -> dict:
-    """Return compact state details for debug logs."""
-
-    return {
-        "current_query": state.get("current_query"),
-        "messages_count": len(state.get("messages", [])),
-        "documents_count": len(state.get("documents", [])),
-        "plan": state.get("plan", []),
-        "status": state.get("status"),
-        "has_final_answer": bool(state.get("final_answer")),
-    }
-
+# Portkey-backed LLM: fallback + cache + retry — same .invoke() interface as ChatGroq
+llm = get_langchain_llm(feature="planner")
 
 def planner_node(state: AgentState):
-
-    '''
-    The planner node determines if a 
-    search is needed based on the Entire conversation.
-    '''
-
-    logfire.info(f"Planner Node Input State: {_state_summary(state)}")
-
+    """
+    The Planner determines if a search is needed based on the ENTIRE conversation.
+    """
+    # Get the conversation history (excluding the latest message)
     history = ""
-
-    for msg in state['messages']:
-        role = "User" if msg['role'] == 'user' else "Assistant"
+    for msg in state["messages"][:-1]:
+        role = "User" if msg["role"] == "user" else "Assistant"
         history += f"{role}: {msg['content']}\n"
-
     
-    user_message = state['messages'][-1]['content'] if state['messages'] else ""
-
+    user_message = state["messages"][-1]["content"] if state["messages"] else ""
+    
     prompt = f"""
-        You are an intelligent query planner for a RAG system.
-
-        Your task is to determine whether the user's latest message can be answered using the existing conversation context or if external retrieval/search is required.
-
-        CONVERSATION HISTORY:
-        {history}
-
-        LATEST USER MESSAGE:
-        "{user_message}"
-
-        Instructions:
-
-        1. Return "CONVERSATIONAL" if:
-        - The message is a greeting (e.g., hi, hello, hey).
-         - The answer can be derived entirely from the conversation history.
-         - The user is referring to previous messages, context, or personal information already present in the conversation.
-         - The question does not require external knowledge retrieval.
-
-        2. Return a concise, optimized search query if:
-         - The user is asking about Kubernetes, Intel, Networking, Cloud, DevOps, or other technical topics.
-         - The answer requires documentation, technical references, specifications, troubleshooting information, or knowledge not present in the conversation history.
-         - Fresh or authoritative information would improve the answer.
-
-            Rules:
-        - Do not explain your reasoning.
-        - Do not output JSON.
-        - Do not output anything except:
-        - "CONVERSATIONAL"
-        - OR a refined search query suitable for retrieval.
-
-        Examples:
-
-        User: "Hi"
-        Output:
-        CONVERSATIONAL
-
-        User: "What is my name?"
-        Output:
-        CONVERSATIONAL
-
-        User: "Explain Kubernetes Horizontal Pod Autoscaler"
-        Output:
-        Kubernetes Horizontal Pod Autoscaler overview and working
-
-        User: "How does Intel TDX work?"
-        Output:
-        Intel Trust Domain Extensions TDX architecture and implementation
-
-        Now determine the correct output.
-        """
+    You are an intelligent Assistant Planner. 
+    Analyze the conversation history and the latest user message.
     
-    with logfire.span("Planner Node"):
+    CONVERSATION HISTORY:
+    {history}
+    
+    LATEST MESSAGE:
+    "{user_message}"
+    
+    Task:
+    1. If the latest message is a greeting (hi, hello) or a question that can be answered using ONLY the conversation history above (e.g., "what is my name"), respond with 'CONVERSATIONAL'.
+    2. If it is a technical question about Kubernetes, Intel, or Networking that requires fresh documentation, output a refined search query.
+    
+    Output ONLY 'CONVERSATIONAL' or the search query.
+    """
+    
+    with logfire.span("Planner Decision"):
         decision = llm.invoke(prompt).content.strip()
-        logfire.info(f"Planner Node Decision: {decision}")
-
+        logfire.info(f"Intent identified: {decision}")
+    
     if decision == "CONVERSATIONAL":
-        output = {
+        return {
             "current_query": "CONVERSATIONAL",
-            "status": "Handling conversational response without external search.",
-            "plan" : ['Intent: Conversational Response', 'Action: Generate response based on conversation history'],
+            "status": "Handling conversationally (using memory)...",
+            "plan": ["Intent: Conversational/Memory", "Retrieval: Skipped"]
         }
-        logfire.info(f"Planner Node Output State: {_state_summary({**state, **output})}")
-        return output
     
-    output = {
+    return {
         "current_query": decision,
-        "status": "Search query generated for external retrieval.",
-        "plan" : ['Intent: External Search Required', f'Action: Execute search with query "{decision}"'],
+        "status": f"Technical research needed. Searching for: {decision}",
+        "plan": ["Intent: Technical", f"Search Term: {decision}"]
     }
-    logfire.info(f"Planner Node Output State: {_state_summary({**state, **output})}")
-    return output
-    
-
-
-
-
-
-
