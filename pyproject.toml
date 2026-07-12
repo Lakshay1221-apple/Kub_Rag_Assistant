@@ -17,6 +17,7 @@ dependencies = [
     "langchain-openai>=1.3.3",
     "logfire[fastapi,requests]>=4.37.0",
     "loguru>=0.7.3",
+    "nemoguardrails>=0.23.0",
     "numpy>=2.5.0",
     "pdfplumber>=0.11.10",
     "pydantic>=2.13.4",

@@ -1,6 +1,5 @@
-# Colang intent definitions + flows for the production guardrail system.
-# Structure mirrors notebooks/01_guardrails.ipynb Experiment 5:
-# off-topic + jailbreak rails stacked with dialog rails (greeting/farewell/capabilities).
+"""Colang intent definitions + flows for the production guardrail system.
+off-topic + jailbreak rails stacked with dialog rails (greeting/farewell/capabilities)."""
 
 
 COLANG_CONTENT = """
