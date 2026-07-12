@@ -28,3 +28,11 @@ beautifulsoup4
 # Logging & Observability
 logfire[fastapi,requests]
 loguru
+
+#Evaluation
+streamlit 
+ragas
+deepeval 
+langfuse 
+pandas 
+openai 

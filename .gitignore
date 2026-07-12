@@ -100,3 +100,4 @@ checkpoints/
 *.pth
 *.onnx
 *.gguf
+json
